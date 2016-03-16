@@ -50,22 +50,22 @@ void loop(void){
     RH = (float) H_dat * 6.10e-3;
     T_C = (float) T_dat * 1.007e-2 - 40.0;
     //Get Date from DS-1307
-    get_date(date);
+    get_date();
     
     //Moisture Control
-    moistureControl(&moistureSense);
+    moistureControl();
     
     //Temp & Humidity Control
-    climateControl(&RH, &T_C);
+    climateControl();
       
     //Light Control
-    lightControl(date, &T_C);
+    lightControl();
     
     //Begin Serial Diagnostics. Verify HIH-6130 Mode and RTC Clock Output
     
     if (modMillis == 0){
-      printHumidityAndTemp(_status, RH, T_C);
-      printDate(date);
+      printHumidityAndTemp();
+      printDate();
       //End Serial Diagnostics
       }
    }
@@ -161,7 +161,7 @@ byte bcdToDec(byte val)  {
 }
 
 
-void get_date(long element[]){
+void get_date(){
   // Reset the register pointer
   Wire.beginTransmission(DS1307_ADDRESS);
   Wire.write(zero);
@@ -169,37 +169,37 @@ void get_date(long element[]){
 
   Wire.requestFrom(DS1307_ADDRESS, 7);
 
-  element[0] = bcdToDec(Wire.read());
-  element[1] = bcdToDec(Wire.read());
-  element[2] = bcdToDec(Wire.read() & 0b111111); //24 hour time
-  element[3] = bcdToDec(Wire.read()); //0-6 -> sunday - Saturday
-  element[4] = bcdToDec(Wire.read());
-  element[5] = bcdToDec(Wire.read());
-  element[6] = bcdToDec(Wire.read());
+  date[0] = bcdToDec(Wire.read());
+  date[1] = bcdToDec(Wire.read());
+  date[2] = bcdToDec(Wire.read() & 0b111111); //24 hour time
+  date[3] = bcdToDec(Wire.read()); //0-6 -> sunday - Saturday
+  date[4] = bcdToDec(Wire.read());
+  date[5] = bcdToDec(Wire.read());
+  date[6] = bcdToDec(Wire.read());
   }
 
-void printDate(long dateArray[]){
+void printDate(){
   //print the date EG   3/1/11 23:59:59
-  Serial.print(dateArray[5]);
+  Serial.print(date[5]);
   Serial.print("/");
-  Serial.print(dateArray[4]);
+  Serial.print(date[4]);
   Serial.print("/");
-  Serial.print(dateArray[6]);
+  Serial.print(date[6]);
   Serial.print(" ");
-  Serial.print(dateArray[2]);
+  Serial.print(date[2]);
   Serial.print(":");
-  Serial.print(dateArray[1]);
+  Serial.print(date[1]);
   Serial.print(":");
-  Serial.println(dateArray[0]);
+  Serial.println(date[0]);
   Serial.print("Day of Year:");
-  Serial.println(dateArray[7]);
+  Serial.println(date[7]);
   Serial.print("Time in Secs:");
-  Serial.println(dateArray[8]);
+  Serial.println(date[8]);
 
 }
 
-void printHumidityAndTemp(byte stat, float relHum, float temp){
-  switch(stat){
+void printHumidityAndTemp(){
+  switch(_status){
     case 0:  Serial.println("Normal.");
       break;
        
@@ -213,16 +213,14 @@ void printHumidityAndTemp(byte stat, float relHum, float temp){
      break; 
     }          
     
-  print_float(relHum, 1);
+  print_float(RH, 1);
   Serial.print("  ");
-  print_float(temp, 2);
+  print_float(T_C, 2);
   Serial.println();
   }  
 
-void moistureControl(const int *moistureSense){
-  int rainSensor = digitalRead(*moistureSense);
-  
-  if (rainSensor == 0){
+void moistureControl(){
+  if (digitalRead(moistureSense) == 0){
     digitalWrite(pump, HIGH);
       }
     else {
@@ -230,8 +228,9 @@ void moistureControl(const int *moistureSense){
       }
   }
 
-void climateControl(float *Rel_Hum, float *Temp_Celcius){
-  if(*Temp_Celcius > 32) {
+void climateControl(){
+//combine with humidControl and add humidity swing with ventalation.
+  if(T_C > 32) {
       digitalWrite(safeFan, HIGH);
       }
     else {
@@ -248,69 +247,69 @@ void humidControl (float *Rel_Hum){
   }
 }
   
-void lightControl (long pdata[], float *T_C){
+void lightControl (){
   int secsPerDayOffset = 60;
   int baseSunrise      = 25200;
   long baseSunset      = 61200;
-// int seconds         = pdata[0];
-// int minutes         = pdata[1];
-//int hours            = pdata[2];
-  long day             = pdata[4];
-//int month            = pdata[5];
-  long timeInSecs      = (pdata[0] + (pdata[1]*60) + (pdata[2]*3600));
+// int seconds         = date[0];
+// int minutes         = date[1];
+//int hours            = date[2];
+  long day             = date[4];
+//int month            = date[5];
+  long timeInSecs      = (date[0] + (date[1]*60) + (date[2]*3600));
   int dayOfYear        = 0;
   long sunrise         = 0;
   long sunset          = 0;
-  pdata[8]             = timeInSecs;
+  date[8]             = timeInSecs;
   
   //Calculate Day Of Year
-  switch(pdata[5]){
+  switch(date[5]){
     case 1:  dayOfYear = day;
-             pdata[7] = dayOfYear;
+             date[7] = dayOfYear;
       break;
         
     case 2:  dayOfYear = (day + 31);
-             pdata[7] = dayOfYear;
+             date[7] = dayOfYear;
       break;
         
     case 3:  dayOfYear = (day + 59);
-             pdata[7] = dayOfYear;
+             date[7] = dayOfYear;
       break;
         
     case 4:  dayOfYear = (day + 90);
-             pdata[7] = dayOfYear;  
+             date[7] = dayOfYear;  
       break;
         
     case 5:  dayOfYear = (day + 120);
-             pdata[7] = dayOfYear;
+             date[7] = dayOfYear;
       break;
         
     case 6:  dayOfYear = (day + 151);
-             pdata[7] = dayOfYear;
+             date[7] = dayOfYear;
       break;
         
     case 7:  dayOfYear = (day + 181);
-             pdata[7] = dayOfYear;
+             date[7] = dayOfYear;
       break;
         
     case 8:  dayOfYear = (day + 212);
-             pdata[7] = dayOfYear;      
+             date[7] = dayOfYear;      
       break;
         
     case 9:  dayOfYear = (day + 243);
-             pdata[7] = dayOfYear;
+             date[7] = dayOfYear;
       break;
         
     case 10:  dayOfYear = (day + 273);
-              pdata[7] = dayOfYear;
+              date[7] = dayOfYear;
       break;
         
     case 11:  dayOfYear = (day + 304);
-              pdata[7] = dayOfYear;
+              date[7] = dayOfYear;
       break;
         
     case 12:  dayOfYear = (day + 334);
-              pdata[7] = dayOfYear;
+              date[7] = dayOfYear;
       break;
     }
   //Set Sunrise and Sunset Variables  
@@ -332,7 +331,7 @@ void lightControl (long pdata[], float *T_C){
     } 
 
   //Keep lights off if overheating
-  if (*T_C >= 34){
+  if (T_C >= 34){
     digitalWrite(lights, HIGH); 
   }
   else if ((timeInSecs >= sunrise) && (timeInSecs <= sunset)){
