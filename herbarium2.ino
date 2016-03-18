@@ -1,4 +1,4 @@
-    
+
 #include <Wire.h> //I2C library
 #define DS1307_ADDRESS 0x68
 byte zero = 0x00; //workaround for issue #527
@@ -15,7 +15,7 @@ byte _status;
 unsigned int H_dat, T_dat, date_dat;
 float RH, T_C;
 long date[9];
-bool humidify = true; 
+bool humidify = true;
 
 #define TRUE 1
 #define FALSE 0
@@ -23,11 +23,11 @@ bool humidify = true;
 void setup(void)
 {
    pinMode(moistureSense, INPUT_PULLUP);
-   pinMode(safeFan, OUTPUT); 
-   pinMode(humidFan, OUTPUT); 
-   pinMode(pump, OUTPUT); 
+   pinMode(safeFan, OUTPUT);
+   pinMode(humidFan, OUTPUT);
+   pinMode(pump, OUTPUT);
    pinMode(lights, OUTPUT);
-  
+
    Serial.begin(9600);
    Wire.begin();
    pinMode(4, OUTPUT);
@@ -36,33 +36,33 @@ void setup(void)
    //Delay for I2C Initialize?
    delay(5000);
    Serial.println(">>>>>>>>>>>>>>>>>>>>>>>>");  // just to be sure things are working
-   
+
 }
-    
-void loop(void){ 
+
+void loop(void){
   //Main Operational Function
   while(1){
     //Time Control Variable
     modMillis = (millis() % 1000);
-    
+
     //Get Temp and RH data from HIH-6130
     _status = get_humidity_temperature(&H_dat, &T_dat);
     RH = (float) H_dat * 6.10e-3;
     T_C = (float) T_dat * 1.007e-2 - 40.0;
     //Get Date from DS-1307
     get_date();
-    
+
     //Moisture Control
     moistureControl();
-    
+
     //Temp & Humidity Control
     climateControl();
-      
+
     //Light Control
     lightControl();
-    
+
     //Begin Serial Diagnostics. Verify HIH-6130 Mode and RTC Clock Output
-    
+
     if (modMillis == 0){
       printHumidityAndTemp();
       printDate();
@@ -71,22 +71,25 @@ void loop(void){
    }
 }
 
+/*I did not write this, but a pretty cool work around to simplify the function.
+* return status but also use globals to "return" humidity and temp data
+*/
 byte get_humidity_temperature(unsigned int *p_H_dat, unsigned int *p_T_dat)
 {
       byte address, Hum_H, Hum_L, Temp_H, Temp_L, _status;
       unsigned int H_dat, T_dat;
       address = 0x27;;
-      Wire.beginTransmission(address); 
+      Wire.beginTransmission(address);
       Wire.endTransmission();
       delay(100);
-      
+
       Wire.requestFrom((int)address, (int) 4);
       Hum_H = Wire.read();
       Hum_L = Wire.read();
       Temp_H = Wire.read();
       Temp_L = Wire.read();
       Wire.endTransmission();
-      
+
       _status = (Hum_H >> 6) & 0x03;
       Hum_H = Hum_H & 0x3f;
       H_dat = (((unsigned int)Hum_H) << 8) | Hum_L;
@@ -96,7 +99,7 @@ byte get_humidity_temperature(unsigned int *p_H_dat, unsigned int *p_T_dat)
       *p_T_dat = T_dat;
       return(_status);
 }
-   
+
 void print_float(float f, int num_digits)
 {
 //    int f_int;
@@ -144,7 +147,7 @@ void setDateTime(){
   Wire.write(decToBcd(month));
   Wire.write(decToBcd(year));
 
-  Wire.write(zero); //start 
+  Wire.write(zero); //start
 
   Wire.endTransmission();
 
@@ -202,22 +205,22 @@ void printHumidityAndTemp(){
   switch(_status){
     case 0:  Serial.println("Normal.");
       break;
-       
+
     case 1:  Serial.println("Stale Data.");
       break;
-          
+
     case 2:  Serial.println("In command mode.");
       break;
-          
-    default: Serial.println("Diagnostic."); 
-     break; 
-    }          
-    
+
+    default: Serial.println("Diagnostic.");
+     break;
+    }
+
   print_float(RH, 1);
   Serial.print("  ");
   print_float(T_C, 2);
   Serial.println();
-  }  
+  }
 
 void moistureControl(){
   if (digitalRead(moistureSense) == 0){
@@ -229,15 +232,39 @@ void moistureControl(){
   }
 
 void climateControl(){
-//combine with humidControl and add humidity swing with ventalation.
-  if(T_C > 32) {
-      digitalWrite(safeFan, HIGH);
-      }
-    else {
-      digitalWrite(safeFan, LOW);
-      }
+  // really hot! turn the fans on. lightControl() will turn of LEDs
+  if(T_C >33) {
+    //humitity fan is normally closed
+    digitalWrite(humidFan, LOW);
+    digitalWrite(safeFan, HIGH);
   }
-  
+  else if (RH >= 85) {
+      digitalWrite(humidFan, HIGH);
+      humidify = false;
+  }
+  else if ((RH > 75) && (RH < 85)){
+    //adding some humidity to the system
+    if (humidify = true) {
+    digitalWrite(humidFan, LOW);
+    digitalWrite(safeFan, LOW);
+    }
+    //get some fresh air into the system before humidifying again
+    else if (RH < 78) {
+      digitalWrite(humidFan, HIGH);
+      digitalWrite(safeFan, HIGH);
+    }
+    //holding
+    else {
+      digitalWrite(humidFan, HIGH);
+      digitalWrite(safeFan, LOW);
+    }
+  }
+  else {
+    digitalWrite(humidFan, LOW);
+    digitalWrite(safeFan, LOW);
+    humidify = true;
+  }
+}
 void humidControl (float *Rel_Hum){
   if(*Rel_Hum > 80) {
      digitalWrite(humidFan, HIGH);
@@ -246,7 +273,7 @@ void humidControl (float *Rel_Hum){
     digitalWrite(humidFan, LOW);
   }
 }
-  
+
 void lightControl (){
   int secsPerDayOffset = 60;
   int baseSunrise      = 25200;
@@ -261,84 +288,80 @@ void lightControl (){
   long sunrise         = 0;
   long sunset          = 0;
   date[8]             = timeInSecs;
-  
+
   //Calculate Day Of Year
   switch(date[5]){
     case 1:  dayOfYear = day;
              date[7] = dayOfYear;
       break;
-        
+
     case 2:  dayOfYear = (day + 31);
              date[7] = dayOfYear;
       break;
-        
+
     case 3:  dayOfYear = (day + 59);
              date[7] = dayOfYear;
       break;
-        
+
     case 4:  dayOfYear = (day + 90);
-             date[7] = dayOfYear;  
+             date[7] = dayOfYear;
       break;
-        
+
     case 5:  dayOfYear = (day + 120);
              date[7] = dayOfYear;
       break;
-        
+
     case 6:  dayOfYear = (day + 151);
              date[7] = dayOfYear;
       break;
-        
+
     case 7:  dayOfYear = (day + 181);
              date[7] = dayOfYear;
       break;
-        
+
     case 8:  dayOfYear = (day + 212);
-             date[7] = dayOfYear;      
+             date[7] = dayOfYear;
       break;
-        
+
     case 9:  dayOfYear = (day + 243);
              date[7] = dayOfYear;
       break;
-        
+
     case 10:  dayOfYear = (day + 273);
               date[7] = dayOfYear;
       break;
-        
+
     case 11:  dayOfYear = (day + 304);
               date[7] = dayOfYear;
       break;
-        
+
     case 12:  dayOfYear = (day + 334);
               date[7] = dayOfYear;
       break;
     }
-  //Set Sunrise and Sunset Variables  
+  //Set Sunrise and Sunset Variables
   if (dayOfYear < 183){
     sunrise = (baseSunrise - (dayOfYear * secsPerDayOffset));
     sunset  = (baseSunset  + (dayOfYear * secsPerDayOffset));
     }
-  
+
   else if (dayOfYear == 183){
-    sunrise = (baseSunrise - (dayOfYear * secsPerDayOffset) 
+    sunrise = (baseSunrise - (dayOfYear * secsPerDayOffset)
             - (.5 * secsPerDayOffset));
-    sunset  = (baseSunset  + (dayOfYear * secsPerDayOffset) 
+    sunset  = (baseSunset  + (dayOfYear * secsPerDayOffset)
             + (.5 * secsPerDayOffset));
     }
-    
+
   else {
     sunrise = (baseSunrise - ((365 - dayOfYear) * secsPerDayOffset));
     sunset  = (baseSunset  + ((365 - dayOfYear) * secsPerDayOffset));
-    } 
+    }
 
-  //Keep lights off if overheating
-  if (T_C >= 34){
-    digitalWrite(lights, HIGH); 
-  }
-  else if ((timeInSecs >= sunrise) && (timeInSecs <= sunset)){
+  //Keep lights off if overheating. LED controller is Normally Open
+  if ((timeInSecs >= sunrise) && (timeInSecs <= sunset) && (T_C < 33)){
     digitalWrite(lights, LOW);
-  
   }
   else {
     digitalWrite(lights, HIGH);
-  }  
- } 
+  }
+ }
