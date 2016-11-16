@@ -10,12 +10,18 @@ const int safeFan       = 10;
 const int humidFan      = 11;
 const int pump          = 12;
 const int lights        = 13;
-unsigned long modMillis;
+const long printInterval = 1000;
+const long pumpRunTime = 120000; //run for 2 minutes.
+unsigned long printMillis = 0;
+unsigned long pumpMillis = 0;
+unsigned long currentMillis;
 byte _status;
 unsigned int H_dat, T_dat, date_dat;
 float RH, T_C;
 long date[9];
-bool humidify = true;
+bool doHumidify = true;
+bool doWater = false;
+bool fault = false;
 
 #define TRUE 1
 #define FALSE 0
@@ -42,9 +48,20 @@ void setup(void)
 void loop(void){
   //Main Operational Function
   while(1){
+    //something bad happened. Go into safe mode.
+    if(fault){
+      digitalWrite(humidFan, LOW);
+      digitalWrite(safeFan, HIGH);
+      digitalWrite(lights, HIGH);
+    }
+    else{
     //Time Control Variable
-    modMillis = (millis() % 1000);
-
+    currentMillis = millis();
+    //Make sure millis() did not roll over. 
+    if ((currentMillis < printMillis) || (currentMillis < pumpMillis)) {
+      printMillis = currentMillis;
+      pumpMillis = currentMillis;
+    }
     //Get Temp and RH data from HIH-6130
     _status = get_humidity_temperature(&H_dat, &T_dat);
     RH = (float) H_dat * 6.10e-3;
@@ -63,12 +80,14 @@ void loop(void){
 
     //Begin Serial Diagnostics. Verify HIH-6130 Mode and RTC Clock Output
 
-    if (modMillis == 0){
+    if (currentMillis - printMillis >= printInterval){
+      printMillis = currentMillis;
       printHumidityAndTemp();
       printDate();
       //End Serial Diagnostics
-      }
+    }
    }
+  }
 }
 
 /*I did not write this, but a pretty cool work around to simplify the function.
@@ -128,12 +147,12 @@ void print_float(float f, int num_digits)
 
 void setDateTime(){
 
-  byte second =      05; //0-59
-  byte minute =      51; //0-59
-  byte hour =        15; //0-23
-  byte weekDay =     1; //1-7
-  byte monthDay =    13; //1-31
-  byte month =       3; //1-12
+  byte second =      00; //0-59
+  byte minute =      14; //0-59
+  byte hour =        21; //0-23
+  byte weekDay =     4; //1-7
+  byte monthDay =    10; //1-31
+  byte month =       11; //1-12
   byte year  =       16; //0-99
 
   Wire.beginTransmission(DS1307_ADDRESS);
@@ -220,58 +239,78 @@ void printHumidityAndTemp(){
   Serial.print("  ");
   print_float(T_C, 2);
   Serial.println();
+  Serial.println();
+  Serial.println();
   }
 
 void moistureControl(){
   if (digitalRead(moistureSense) == 0){
-    digitalWrite(pump, HIGH);
-      }
+    //Pump has not been started
+    if (!doWater){
+      //record the start time
+      pumpMillis = currentMillis;
+      //record the pump was started
+      doWater = true;
+      //start the pump
+      digitalWrite(pump, HIGH);
+    }
     else {
-      digitalWrite(pump, LOW);
+      //pump was previously started
+      //check how long it has been running
+      //if it's been running for longer than set time, have a problem.
+      if (currentMillis - pumpMillis >= pumpRunTime){
+        digitalWrite(pump, LOW);
+        fault = true;
+        return;
       }
+      else {
+        digitalWrite(pump, HIGH);
+      }
+    }
+   }
+   //our moisture sensor has tripped. make sure the pump runs for set time.
+   else { 
+    //check how long.
+    if ((currentMillis - pumpMillis < pumpRunTime) && doWater){
+      digitalWrite(pump, HIGH);
+    }
+    else {
+      //pump has run long enough.
+      digitalWrite(pump, LOW);
+      doWater = false;
+    }
   }
-
+}
 void climateControl(){
-  // really hot! turn the fans on. lightControl() will turn of LEDs
-  if(T_C >33) {
-    //humitity fan is normally closed
-    digitalWrite(humidFan, LOW);
-    digitalWrite(safeFan, HIGH);
+  // really hot! turn the fans on.
+  if(T_C > 33) {
+    //humidity fan is normally closed
+    fault = true;
+    return;
   }
-  else if (RH >= 85) {
+  else if (RH >= 80) {
       digitalWrite(humidFan, HIGH);
-      humidify = false;
+      doHumidify = false;
   }
-  else if ((RH > 75) && (RH < 85)){
-    //adding some humidity to the system
-    if (humidify = true) {
+  else if (RH > 70){
+    //continue adding humidity to the system
+    if (doHumidify) {
     digitalWrite(humidFan, LOW);
     digitalWrite(safeFan, LOW);
     }
-    //get some fresh air into the system before humidifying again
-    else if (RH < 78) {
+    //get some fresh air into the system before doHumidifying again
+    //no hold with both fans off. system was overheating.
+    else {
       digitalWrite(humidFan, HIGH);
       digitalWrite(safeFan, HIGH);
     }
-    //holding
-    else {
-      digitalWrite(humidFan, HIGH);
-      digitalWrite(safeFan, LOW);
-    }
   }
   else {
+    //Humidity less than 70%. Add moisture
     digitalWrite(humidFan, LOW);
     digitalWrite(safeFan, LOW);
-    humidify = true;
-  }
-}
-void humidControl (float *Rel_Hum){
-  if(*Rel_Hum > 80) {
-     digitalWrite(humidFan, HIGH);
-  }
-  else {
-    digitalWrite(humidFan, LOW);
-  }
+    doHumidify = true;
+  } 
 }
 
 void lightControl (){
@@ -357,11 +396,12 @@ void lightControl (){
     sunset  = (baseSunset  + ((365 - dayOfYear) * secsPerDayOffset));
     }
 
-  //Keep lights off if overheating. LED controller is Normally Open
-  if ((timeInSecs >= sunrise) && (timeInSecs <= sunset) && (T_C < 33)){
+  if ((timeInSecs >= sunrise) && (timeInSecs <= sunset)){
     digitalWrite(lights, LOW);
   }
   else {
     digitalWrite(lights, HIGH);
   }
  }
+
+
