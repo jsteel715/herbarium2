@@ -21,6 +21,7 @@ float RH, T_C;
 long date[9];
 bool doHumidify = true;
 bool doWater = false;
+bool hot = false;
 bool fault = false;
 
 #define TRUE 1
@@ -282,25 +283,32 @@ void moistureControl(){
   }
 }
 void climateControl(){
-  // really hot! turn the fans on.
-  if(T_C > 33) {
+  //Temp at grow area is about 3 degrees cooler than where the temp sensor is
+  if (T_C > 32.5) {
+    digitalWrite(safeFan, HIGH);
+  }
+  else {
+    digitalWrite(safeFan, LOW);
+  }
+  
+  // really hot! turn the fans on. about 90F at plant location.
+  if(T_C > 33.9) {
     //humidity fan is normally closed
     fault = true;
     return;
   }
-  else if (RH >= 80) {
+  else if (RH >= 75) {
       digitalWrite(humidFan, HIGH);
       doHumidify = false;
   }
-  else if (RH > 70){
+  else if (RH > 65){
     //continue adding humidity to the system
     if (doHumidify) {
-    digitalWrite(humidFan, LOW);
-    digitalWrite(safeFan, LOW);
+      digitalWrite(humidFan, LOW);
+      digitalWrite(safeFan, LOW);
     }
     //get some fresh air into the system before doHumidifying again
-    //no hold with both fans off. system was overheating.
-    else {
+    else if (RH < 68){
       digitalWrite(humidFan, HIGH);
       digitalWrite(safeFan, HIGH);
     }
@@ -308,7 +316,12 @@ void climateControl(){
   else {
     //Humidity less than 70%. Add moisture
     digitalWrite(humidFan, LOW);
-    digitalWrite(safeFan, LOW);
+    if (hot) {
+      digitalWrite(safeFan, HIGH);
+    }
+    else {
+      digitalWrite(safeFan, LOW);
+    }
     doHumidify = true;
   } 
 }
